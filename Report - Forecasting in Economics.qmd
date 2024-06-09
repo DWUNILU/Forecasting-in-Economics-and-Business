@@ -1,0 +1,431 @@
+---
+title: "Report - Forecasting in Economics and Business"
+format: html
+editor: visual
+---
+
+## 1. Introduction
+
+The objective of this analysis is to examine the trends and developments in Swiss Retail Sales and identify the underlying influencing factors. Retail sales are a crucial indicator of economic health and consumer behavior in an economy. A deeper understanding of these variables can provide valuable insights into economic dynamics and potential future developments. This analysis considers monthly data from January 2000 to March 2023. It focuses on how various macroeconomic indicators such as the inflation rate, the exchange rate (CHF/EUR), the unemployment rate, and the Brent crude oil price influence retail sales. By calculating the growth rates of these variables and visualizing them, correlations and potential causations can be identified.
+
+Furthermore, the analysis aims to provide insights into the following questions:
+
+1\. How have retail sales evolved over the considered period?
+
+2\. Which macroeconomic factors strongly correlate with retail sales?
+
+3\. How do the growth rates of retail sales compare to the growth rates of the considered influencing factors?
+
+Through this investigation, future developments in retail sales can be derived. This can be of great use to decision-makers in retail and economic policy for planning and implementing strategic measures.
+
+## 2. Data Description
+
+The dataset comprises monthly observations from January 2000 to March 2023 and includes the following variables:
+
+1.  Retail_sales: The Swiss retail sales index, which measures the performance of the retail sector in Switzerland
+2.  Inflation: The inflation rate, indicating the percentage change in the price level of a basket of goods and services
+3.  Exchange-Rate CHF/ EUR: The exchange rate between the Swiss Franc (CHF) and the Euro (EUR)
+4.  Unemploy: The unemployment rate, representing the percentage of the labor force that is unemployed
+5.  Inflation: The year-over-year inflation rate, showing the percentage change in the price level compared to the same month in the previous year
+6.  Oil-Price: The price of Brent crude oil, a major benchmark for oil prices worldwide
+7.  Retail-Sales-EU: The retail sales index in the European Union, which measures the performance of the retail sector in the EU
+
+The data was sourced from various reputable economic databases and has been meticulously cleaned and prepared for analysis. Each variable provides critical insights into different aspects of economic activity, and together, they form a comprehensive dataset for examining the factors influencing the Swiss retail sales index.
+
+## 3. Data Analysis
+
+### 3.1 Preparing and Fitting the Data
+
+Data Analysis to analyze the monthly and yearly changes in the economic indicators, the logarithmic transformation and differencing method is applied. This approach helps in stabilizing the variance and transforming the data to better reflect relative changes. The following transformations are performed: \
+
+```{r setup1, include=FALSE}
+#  Load packages
+library(tseries)  
+library(xts)
+library(forecast) 
+library(tsbox)    
+library(seasonal)
+library(mFilter)
+library(dplyr)
+library(readxl)
+library(vars)
+library(MASS)
+library(bruceR)
+```
+
+```{r setup2, include=FALSE}
+# Load transposed data
+rawData <- read_excel("C:/Users/David W/Desktop/Bericht/Forecasting-in-Economics-and-Business/retail_sales_transp_March.xlsx")
+
+# Convert the data frame to a xts object and use the first column as date
+data <- as.xts(x = rawData[, -1], order.by = as.Date(rawData$Date))
+```
+
+```{r}
+# Take the first difference of the log to have growth rates
+data$df_Inflation <- diff(log(data$Inflation), lag = 1, differences = 1)
+data$df_Retail_sales <- diff(log(data$Retail_sales), lag = 1, differences = 1)
+data$df12_Retail_sales <- diff(log(data$Retail_sales), lag = 12, differences = 1)
+data$df_CHFEUR <- diff(log(data$CHFEUR), lag = 1, differences = 1)
+data$df_Unemploy <- diff(log(data$Unemploy), lag = 1, differences = 1)
+data$df_Brent_COIL <- diff(log(data$Brent_COIL), lag = 1, differences = 1)
+data$df_Retail_EU <- diff(log(data$Retail_sales_EU), lag = 1, differences = 1)
+
+# Delete first row because of differencing
+data <- tail(data, -1)
+```
+
+The Purpose of the Transformation are:
+
+-   **Logarithmic Transformation**: Stabilizes the variance and makes the data distribution more normal, which is beneficial for statistical analysis.
+
+-   **Differencing**: Removes trends and makes the data stationary, which is a common requirement for time series modeling.
+
+### 3.2 Visualizing Key Economic Indicators
+
+To better understand the trends and fluctuations in key economic indicators, we generated time series plots for several variables. These visualizations provide insights into the behavior and interactions of these indicators over the observed period.
+
+***1. Retail Sales Index*** 
+```{r setup3, echo=FALSE}
+plot.xts(cbind(data$Retail_sales),  main = "Not Seasonally Adjusted")
+```
+The Retail Sales Index, representing the performance of the retail sector in Switzerland, was plotted to visualize its trends and variations over time. This plot helps in understanding the overall movement and cyclic patterns within the retail industry.
+
+***2. Retail Sales Growth Rate***
+```{r setup4, echo=FALSE}
+plot.xts(cbind(data$df_Retail_sales),  main = "Not Seasonally Adjusted")
+```
+The Retail-Sales-Variable, which captures the monthly growth rate of retail sales, was plotted. This visualization aids in identifying periods of significant growth or decline, providing a clearer picture of retail sales dynamics.
+
+***3. Inflation***
+```{r setup5, echo=FALSE}
+plot.xts(cbind(data$Inflation),  main = "Switzerland")
+```
+The inflation rate was plotted to observe the changes in the price level of a basket of goods and services over time. This plot is crucial for understanding inflationary pressures within the economy and their potential impact on consumer behavior and retail sales.
+
+***4. Brent Crude Oil***
+```{r setup6, echo=FALSE}
+plot.xts(cbind(data$Brent_COIL),  main = "Price")
+```
+The price of Brent crude oil, a major benchmark for oil prices worldwide, was plotted. This visualization helps in analyzing how fluctuations in oil prices may influence other economic variables, including retail sales and inflation.
+
+***5. Exchange Rate***
+```{r setup7, echo=FALSE}
+plot.xts(cbind(data$CHFEUR),  main = "CHF/EUR")
+```
+The exchange rate between the Swiss Franc (CHF) and the Euro (EUR) was plotted. This plot is essential for understanding the impact of currency exchange rate movements on international trade and economic stability.
+
+These plots were created using the plot.xts function, which is specifically designed for visualizing time series data. By examining these visualizations, we can gain valuable insights into the behavior and relationships between these key economic indicators.
+
+### 3.3 Seasonal Adjustment of Retail Sales
+
+To remove seasonal patterns from the retail sales data, we applied a seasonal adjustment using monthly dummy variables. This adjustment helps isolate the underlying trends and cycles in the data.
+
+```{r setup8, echo=FALSE}
+data <- tail(data, -1)
+monthlyDummies <- forecast::seasonaldummy(ts_ts(data$df_Retail_sales)) 
+modelretailseason <- lm(data$df_Retail_sales ~ monthlyDummies)
+
+
+plot.xts(as.xts(modelretailseason$fitted.values),  main = "Swiss Retail Sales: fitted with seasonal dummy")
+plot.xts(as.xts(modelretailseason$residuals),  main = "Swiss Retail Sales: deviations from seasonal dummy")
+
+data$Retail_sales_cycle  <- modelretailseason$residuals
+```
+
+#### Swiss Retail Sales
+- **Monthly Dummies Creation**: Monthly dummies were generated to account for seasonality in the retail sales growth rate.
+- **Model Fitting**: A linear model was fitted to the retail sales growth rate using these monthly dummies.
+- **Visualization**: The fitted values from the model were plotted to show the retail sales adjusted for seasonality. Additionally, the residuals were plotted to highlight deviations from the seasonal pattern.
+- **Cycle Extraction**: The residuals were extracted to represent the deseasonalized retail sales cycle.
+
+```{r setup9, echo=FALSE}
+modelretailseason <- lm(data$df_Retail_EU ~ monthlyDummies)
+
+plot.xts(as.xts(modelretailseason$fitted.values),  main = "EU Retail Sales: fitted with seasonal dummy")
+plot.xts(as.xts(modelretailseason$residuals),  main = "EU Retail Sales: deviations from seasonal dummy")
+
+data$Retail_EU_cycle <- modelretailseason$residuals
+```
+
+#### EU Retail Sales
+- **Model Fitting**: The same monthly dummies were used to fit a linear model for the EU retail sales growth rate.
+- **Visualization**: The fitted values from the model were plotted to show the EU retail sales adjusted for seasonality. Additionally, the residuals were plotted to highlight deviations from the seasonal pattern.
+- **Cycle Extraction**: The residuals were extracted to represent the deseasonalized EU retail sales cycle.
+
+By applying these seasonal adjustments, we can better analyze the true underlying movements and trends in both Swiss and EU retail sales, free from seasonal variations.
+
+### 3.4 Cross-Correlation Function (CCF) Analysis
+
+To explore the potential relationships between the deseasonalized Swiss retail sales cycle and various exogenous variables, we used Cross-Correlation Function (CCF) plots. These plots help identify any time-lagged correlations between the variables, which can provide insights into leading or lagging indicators of retail sales performance.
+
+```{r setup10, echo=FALSE}
+ccf(as.ts(data$Retail_sales_cycle["/2019-12-31"]), as.ts(data$Retail_EU_cycle["/2019-12-31"]), main = "CCF - Swiss Retail Sales Cycle and EU Retail Sales Cycle")
+
+```
+
+### Key Findings
+
+- **Strong Correlation**: A significant correlation was found between the deseasonalized Swiss retail sales cycle and the EU retail sales cycle. This suggests that changes in EU retail sales are a strong indicator of changes in Swiss retail sales, highlighting the interconnectedness of these economies.
+- **No Significant Correlationt**: No significant correlations were identified between the Swiss retail sales cycle and the CHF/EUR exchange rate, inflation rate, Brent crude oil price, or unemployment rate. This indicates that these factors do not have a strong direct impact on the Swiss retail sales cycle within the observed period.
+
+### 3.5 Refining the Model with Pandemic Dummies
+
+To accurately capture the impact of the COVID-19 pandemic on retail sales, we included pandemic dummies in our model. This adjustment helps isolate the effects of the pandemic period and refine the model accordingly. By incorporating these pandemic dummies, the model can better account for the unusual fluctuations caused by the COVID-19 pandemic. This refinement is crucial for isolating the true underlying trends and making more accurate forecasts for retail sales during and after the pandemic period.
+
+```{r setup11, echo=FALSE}
+## Include pandemic dummies to refine the model and exlude the correct pandemic months 
+## Only until December 2021 because shops opened up earlier
+
+pandemicDummies <- as.xts(ts(matrix(0, nrow = 320, ncol = 24), start = c(2000, 2), frequency = 12))
+
+## Suggesting a pandemic period from 01/01/2020 to 31/12/21 - earlier normalization for retail 
+
+pandemicDummies["2020-01-01", 1] <- 1
+pandemicDummies["2020-02-01", 2] <- 1
+pandemicDummies["2020-03-01", 3] <- 1
+pandemicDummies["2020-04-01", 4] <- 1
+pandemicDummies["2020-05-01", 5] <- 1
+pandemicDummies["2020-06-01", 6] <- 1
+pandemicDummies["2020-07-01", 7] <- 1
+pandemicDummies["2020-08-01", 8] <- 1
+pandemicDummies["2020-09-01", 9] <- 1
+pandemicDummies["2020-10-01", 10] <- 1
+pandemicDummies["2020-11-01", 11] <- 1
+pandemicDummies["2020-12-01", 12] <- 1
+pandemicDummies["2021-01-01", 13] <- 1
+pandemicDummies["2021-02-01", 14] <- 1
+pandemicDummies["2021-03-01", 15] <- 1
+pandemicDummies["2021-04-01", 16] <- 1
+pandemicDummies["2021-05-01", 17] <- 1
+pandemicDummies["2021-06-01", 18] <- 1
+pandemicDummies["2021-07-01", 19] <- 1
+pandemicDummies["2021-08-01", 20] <- 1
+pandemicDummies["2021-09-01", 21] <- 1
+pandemicDummies["2021-10-01", 22] <- 1
+pandemicDummies["2021-11-01", 23] <- 1
+pandemicDummies["2021-12-01", 24] <- 1
+
+```
+
+### 3.6 Testing Exogenous Variables with ARIMA Models
+
+To refine the model and check the impact of various exogenous variables on the Swiss retail sales cycle, we used the `auto.arima` function from the `forecast` package. The goal was to determine the best-fit ARIMA model while including different exogenous variables (regressors) along with pandemic dummies.
+
+We tested different combinations of exogenous variables, including the EU retail sales cycle and the CHF/EUR exchange rate, along with the pandemic dummies. 
+
+#### Chosen Model
+
+```{r setup12, include=FALSE}
+# Convert the data frame to a xts object and use the first column as date
+
+data <- as.xts(x = rawData[, -1], order.by = as.Date(rawData$Date))
+
+# take the first difference of the log to have growth rates 
+
+data$df_Inflation <- diff(log(data$Inflation), lag = 1, differences = 1)
+data$df_Retail_sales <- diff(log(data$Retail_sales), lag = 1, differences = 1)
+data$df12_Retail_sales <- diff(log(data$Retail_sales), lag = 12, differences = 1)
+data$df_CHFEUR <- diff(log(data$CHFEUR), lag = 1, differences = 1)
+data$df_Unemploy <- diff(log(data$Unemploy), lag = 1, differences = 1)
+data$df_Brent_COIL <- diff(log(data$Brent_COIL), lag = 1, differences = 1)
+data$df_Retail_EU <- diff(log(data$Retail_sales_EU), lag = 1, differences = 1)
+
+# delete first row because of differencing 
+
+data <- tail(data, -1)
+
+# Visualize data
+
+plot.xts(cbind(data$Retail_sales),  main = "Retail Sales Index (not seasonally adjusted)")
+plot.xts(cbind(data$df_Retail_sales),  main = "Retail Sales Growth rate (not seasonally adjusted)")
+plot.xts(cbind(data$Inflation),  main = "Inflation")
+plot.xts(cbind(data$Brent_COIL),  main = "Brent Crude Oil")
+plot.xts(cbind(data$CHFEUR),  main = "CHF/EUR")
+
+### Seasonally adjust df Retail sales with monthly dummies 
+
+monthlyDummies <- forecast::seasonaldummy(ts_ts(data$df_Retail_sales)) 
+modelretailseason <- lm(data$df_Retail_sales ~ monthlyDummies)
+
+
+plot.xts(as.xts(modelretailseason$fitted.values),  main = "Swiss Retail Sales: fitted with seasonal dummy")
+plot.xts(as.xts(modelretailseason$residuals),  main = "Swiss Retail Sales: deviations from seasonal dummy")
+
+data$Retail_sales_cycle  <- modelretailseason$residuals
+
+## Doing the same with Retail Sales EU
+
+modelretailseason <- lm(data$df_Retail_EU ~ monthlyDummies)
+
+plot.xts(as.xts(modelretailseason$fitted.values),  main = "EU Retail Sales: fitted with seasonal dummy")
+plot.xts(as.xts(modelretailseason$residuals),  main = "EU Retail Sales: deviations from seasonal dummy")
+
+data$Retail_EU_cycle <- modelretailseason$residuals
+
+# Explore the CCF Plot for different candidates for the exogenous variable 
+
+ccf(as.ts(data$Retail_sales_cycle["/2019-12-31"]),as.ts(data$Retail_EU_cycle["/2019-12-31"]))
+ccf(as.ts(data$Retail_sales_cycle["/2019-12-31"]),as.ts(data$df_CHFEUR["/2019-12-31"]))
+ccf(as.ts(data$Retail_sales_cycle["/2019-12-31"]),as.ts(data$df_Inflation["/2019-12-31"]))
+ccf(as.ts(data$Retail_sales_cycle["/2019-12-31"]),as.ts(data$df_Brent_COIL["/2019-12-31"]))
+ccf(as.ts(data$Retail_sales_cycle["/2019-12-31"]),as.ts(data$df_Unemploy["/2019-12-31"]))
+
+# Correlation only found for Retail EU (seasonally adjusted) - nothing for CHFEUR or Inflation
+
+## Include pandemic dummies to refine the model and exlude the correct pandemic months 
+## Only until December 2021 because shops opened up earlier
+
+pandemicDummies <- as.xts(ts(matrix(0, nrow = 320, ncol = 24), start = c(2000, 2), frequency = 12))
+
+## Suggesting a pandemic period from 01/01/2020 to 31/12/21 - earlier normalization for retail 
+
+pandemicDummies["2020-01-01", 1] <- 1
+pandemicDummies["2020-02-01", 2] <- 1
+pandemicDummies["2020-03-01", 3] <- 1
+pandemicDummies["2020-04-01", 4] <- 1
+pandemicDummies["2020-05-01", 5] <- 1
+pandemicDummies["2020-06-01", 6] <- 1
+pandemicDummies["2020-07-01", 7] <- 1
+pandemicDummies["2020-08-01", 8] <- 1
+pandemicDummies["2020-09-01", 9] <- 1
+pandemicDummies["2020-10-01", 10] <- 1
+pandemicDummies["2020-11-01", 11] <- 1
+pandemicDummies["2020-12-01", 12] <- 1
+pandemicDummies["2021-01-01", 13] <- 1
+pandemicDummies["2021-02-01", 14] <- 1
+pandemicDummies["2021-03-01", 15] <- 1
+pandemicDummies["2021-04-01", 16] <- 1
+pandemicDummies["2021-05-01", 17] <- 1
+pandemicDummies["2021-06-01", 18] <- 1
+pandemicDummies["2021-07-01", 19] <- 1
+pandemicDummies["2021-08-01", 20] <- 1
+pandemicDummies["2021-09-01", 21] <- 1
+pandemicDummies["2021-10-01", 22] <- 1
+pandemicDummies["2021-11-01", 23] <- 1
+pandemicDummies["2021-12-01", 24] <- 1
+
+
+## Check the different exogenous variables with the model (for later comparability no seasonal model - 
+## because we had som non stationarity for some tau with the SARIMA model) 
+## Use Monthly dummies (seasonal adjusted time-series)
+
+forecast::auto.arima(data$Retail_sales_cycle,
+                     ic="bic",
+                     xreg = pandemicDummies["2000-02-01/2024-03-01"], 
+                     max.d = 0, 
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+forecast::auto.arima(data$Retail_sales_cycle,
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$Retail_EU_cycle),
+                     max.d = 0, 
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+forecast::auto.arima(data$Retail_sales_cycle,
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$df_CHFEUR),
+                     max.d = 0, 
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+forecast::auto.arima(data$Retail_sales_cycle,
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$Retail_EU_cycle,
+                                  data$df_CHFEUR),
+                     max.d = 0, 
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+## Double check results with SARIMA
+
+forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = pandemicDummies["2000-02-01/2024-03-01"],
+                     max.d = 0, 
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$df_Retail_EU),
+                     max.d = 0, 
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$df_Retail_EU,
+                                  lag(data$df_Retail_EU)
+                     ),
+                     max.d = 0, 
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$df_CHFEUR),
+                     max.d = 0, 
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$df_Retail_EU,
+                                  data$df_CHFEUR),
+                     max.d = 0, 
+                     trace = TRUE,
+                     stepwise = FALSE)
+```
+
+```{r setup13, include=FALSE}
+## The model we choose - only Retail Sales EU as exogenous 
+
+modelretailsales <- forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                                         ic="bic",
+                                         xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                                      data$df_Retail_EU
+                                         ),
+                                         max.d = 0, 
+                                         trace = TRUE,
+                                         stepwise = FALSE)
+```
+
+After evaluating various combinations, the best-performing model included only the EU retail sales cycle as the exogenous variable. The final selected model is as follows:
+
+### Model Specification
+
+- **Model Chosen**: ARIMA(0,0,1)(2,1,0)[12]
+- **Exogenous Variable**: EU Retail Sales (seasonally adjusted)
+
+This model was chosen because it best captured the dynamics of the Swiss retail sales cycle, accounting for both the pandemic impact and the influence of the EU retail market.
+
+In the next step we want to forecast the EU retail sales In the next step, we forecasted the EU retail sales by fitting an ARIMA model to the deseasonalized EU retail sales growth rate, including pandemic dummies as exogenous variables. The forecast generated provided valuable insights into the expected trends in EU retail sales for the period from April 2024 to March 2025, aiding in strategic planning and decision-making.
+
+```{r setup14, include=FALSE}
+modelretaileu <- forecast::auto.arima(ts_ts(data$df_Retail_EU), 
+                                      xreg = pandemicDummies["2000-02-01/2024-03-01"], 
+                                      ic = "bic",
+                                      trace = TRUE,
+                                      stepwise = FALSE
+)
+```
+
+```{r setup15, echo=FALSE}
+modelretaileu$bic  
+
+forecasteu <- forecast::forecast(modelretaileu, 
+                                 xreg = pandemicDummies["2024-04-01/2025-03-01"])
+
+plot(forecasteu)
+```
+
