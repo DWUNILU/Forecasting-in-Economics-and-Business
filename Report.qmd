@@ -1,0 +1,40 @@
+---
+title: "Swiss Retail Sales Analysis"
+format: html
+editor: visual
+---
+
+## 1. Introduction
+
+The objective of this analysis is to examine the trends and developments in Swiss Retail Sales and identify the underlying influencing factors. Retail sales are a crucial indicator of economic health and consumer behavior in an economy. A deeper understanding of these variables can provide valuable insights into economic dynamics and potential future developments. This analysis considers monthly data from January 2000 to March 2023. It focuses on how various macroeconomic indicators such as the inflation rate, the exchange rate (CHF/EUR), the unemployment rate, and the Brent crude oil price influence retail sales. By calculating the growth rates of these variables and visualizing them, correlations and potential causations can be identified.
+
+Furthermore, the analysis aims to provide insights into the following questions:
+
+1\. How have retail sales evolved over the considered period?
+
+2\. Which macroeconomic factors strongly correlate with retail sales?
+
+3\. How do the growth rates of retail sales compare to the growth rates of the considered influencing factors?
+
+Through this investigation, future developments in retail sales can be derived. This can be of great use to decision-makers in retail and economic policy for planning and implementing strategic measures.
+
+## 2. Data  Description
+
+**Data Description**
+
+The dataset comprises monthly observations from January 2000 to March 2023 and includes the following variables:
+
+1.  Retail_sales: The Swiss retail sales index, which measures the performance of the retail sector in Switzerland
+2.  Inflation: The inflation rate, indicating the percentage change in the price level of a basket of goods and services
+3.  Exchange-Rate CHF/ EUR: The exchange rate between the Swiss Franc (CHF) and the Euro (EUR)
+4.   Unemploy: The unemployment rate, representing the percentage of the labor force that is unemployed
+5.  Inflation: The year-over-year inflation rate, showing the percentage change in the price level compared to the same month in the previous year
+6.  Oil-Price: The price of Brent crude oil, a major benchmark for oil prices worldwide
+7.  Retail-Sales-EU: The retail sales index in the European Union, which measures the performance of the retail sector in the EU
+
+The data was sourced from various reputable economic databases and has been meticulously cleaned and prepared for analysis. Each variable provides critical insights into different aspects of economic activity, and together, they form a comprehensive dataset for examining the factors influencing the Swiss retail sales index.
+
+
+```{r}
+1 + 1
+```
