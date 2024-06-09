@@ -421,7 +421,8 @@ modelretaileu <- forecast::auto.arima(ts_ts(data$df_Retail_EU),
 ```
 
 ```{r setup15, echo=FALSE}
-modelretaileu$bic  
+bic_value <- modelretaileu$bic
+cat("BIC:", bic_value, "\n")
 
 forecasteu <- forecast::forecast(modelretaileu, 
                                  xreg = pandemicDummies["2024-04-01/2025-03-01"])
