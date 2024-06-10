@@ -1,0 +1,580 @@
+---
+title: "Forecast Swiss Retail Sales Index"
+output: html_notebook
+---
+
+### Preliminaries 
+
+```{r setup, warning=FALSE}
+#install.packages("knitr")
+library(knitr)
+knitr::opts_knit$set(root.dir = "/Users/floriangoldinger/Desktop/Unilu/Forecasting in Economics and Business/Forecasting Project")
+knitr::opts_chunk$set(message = FALSE,warning=FALSE)
+```
+
+```{r}
+ rm(list = ls())
+```
+
+### Install and load packages 
+
+```{r, comment=FALSE, warning=FALSE}
+#install.packages("tseries")  
+#install.packages("xts") 
+#install.packages("forecast") 
+#install.packages("tsbox")    
+#install.packages("seasonal")
+#install.packages("mFilter")
+#install.packages("bruceR", dep=TRUE)
+#install.packages("fanplot")
+
+library(tseries)  
+library(xts)
+library(forecast) 
+library(tsbox)    
+library(seasonal)
+library(mFilter)
+library(dplyr)
+library(readxl)
+library(vars)
+library(MASS)
+library(bruceR)
+library(fanplot)  
+```
+
+### Prepare and transform data 
+
+Load data: 
+
+```{r}
+rawData <- read_excel("retail_sales_transp_March.xlsx")
+```
+
+Convert the data frame to a xts object and use the first column as date:
+
+```{r}
+data <- as.xts(x = rawData[, -1], order.by = as.Date(rawData$Date))
+```
+
+Take the first difference of the log to later work with the growth rates : 
+
+```{r}
+data$df_Retail_sales <- diff(log(data$Retail_sales), lag = 1, differences = 1)
+data$df_Inflation <- diff(log(data$Inflation), lag = 1, differences = 1)
+data$df12_Retail_sales <- diff(log(data$Retail_sales), lag = 12, differences = 1)
+data$df_CHFEUR <- diff(log(data$CHFEUR), lag = 1, differences = 1)
+data$df_Unemploy <- diff(log(data$Unemploy), lag = 1, differences = 1)
+data$df_Brent_COIL <- diff(log(data$Brent_COIL), lag = 1, differences = 1)
+data$df_Retail_EU <- diff(log(data$Retail_sales_EU), lag = 1, differences = 1)
+```
+
+Delete first row because of differencing 
+```{r}
+data <- tail(data, -1)
+```
+
+Visualize data 
+```{r}
+plot.xts(cbind(data$Retail_sales),  main = "Retail Sales Index (not seasonally adjusted)")
+plot.xts(cbind(data$df_Retail_sales),  main = "Retail Sales Growth rate (not seasonally adjusted)")
+plot.xts(cbind(data$Retail_sales_EU),  main = "Retail Sales EU")
+plot.xts(cbind(data$df_Retail_sales),  main = "Retail Sales Growth rate (not seasonally adjusted)")
+plot.xts(cbind(data$CHFEUR),  main = "CHF/EUR")
+plot.xts(cbind(data$Inflation),  main = "Inflation")
+plot.xts(cbind(data$Brent_COIL),  main = "Brent Crude Oil")
+```
+Seasonally adjust df Retail sales and df Retail Sales EU with monthly dummies.
+```{r}
+monthlyDummies <- forecast::seasonaldummy(ts_ts(data$df_Retail_sales)) 
+modelretailseasonch <- lm(data$df_Retail_sales ~ monthlyDummies)
+plot.xts(as.xts(modelretailseasonch$fitted.values),  main = "Swiss Retail Sales: fitted with seasonal dummy")
+plot.xts(as.xts(modelretailseasonch$residuals),  main = "Swiss Retail Sales: deviations from seasonal dummy")
+data$Retail_sales_cycle  <- modelretailseasonch$residuals
+
+modelretailseasoneu <- lm(data$df_Retail_EU ~ monthlyDummies)
+plot.xts(as.xts(modelretailseasoneu$fitted.values),  main = "EU Retail Sales: fitted with seasonal dummy")
+plot.xts(as.xts(modelretailseasoneu$residuals),  main = "EU Retail Sales: deviations from seasonal dummy")
+data$Retail_EU_cycle <- modelretailseasoneu$residuals
+```
+Create pandemic dummies to later exclude this period from analysis - suggesting a pandemic period from 01/01/2020 to 31/21/2021.
+
+```{r}
+pandemicDummies <- as.xts(ts(matrix(0, nrow = 320, ncol = 24), start = c(2000, 2), frequency = 12))
+pandemicDummies["2020-01-01", 1] <- 1
+pandemicDummies["2020-02-01", 2] <- 1
+pandemicDummies["2020-03-01", 3] <- 1
+pandemicDummies["2020-04-01", 4] <- 1
+pandemicDummies["2020-05-01", 5] <- 1
+pandemicDummies["2020-06-01", 6] <- 1
+pandemicDummies["2020-07-01", 7] <- 1
+pandemicDummies["2020-08-01", 8] <- 1
+pandemicDummies["2020-09-01", 9] <- 1
+pandemicDummies["2020-10-01", 10] <- 1
+pandemicDummies["2020-11-01", 11] <- 1
+pandemicDummies["2020-12-01", 12] <- 1
+pandemicDummies["2021-01-01", 13] <- 1
+pandemicDummies["2021-02-01", 14] <- 1
+pandemicDummies["2021-03-01", 15] <- 1
+pandemicDummies["2021-04-01", 16] <- 1
+pandemicDummies["2021-05-01", 17] <- 1
+pandemicDummies["2021-06-01", 18] <- 1
+pandemicDummies["2021-07-01", 19] <- 1
+pandemicDummies["2021-08-01", 20] <- 1
+pandemicDummies["2021-09-01", 21] <- 1
+pandemicDummies["2021-10-01", 22] <- 1
+pandemicDummies["2021-11-01", 23] <- 1
+pandemicDummies["2021-12-01", 24] <- 1
+```
+
+# Univariate model
+
+ACF and PACF graphs to determine AC and MA lag 
+
+```{r}
+par(mfrow=c(1,2))
+acf(data$Retail_sales_cycle,lag.max = 20, na.action = na.contiguous,  main = "Inclusive Pandemic")
+acf(data["/2019-12-01"]$Retail_sales_cycle,lag.max = 20, na.action = na.contiguous,  main = "Exclusive Pandemic")
+
+par(mfrow=c(1,2))
+pacf(data$Retail_sales_cycle,lag.max = 20,na.action = na.contiguous,  main = "Inclusive Pandemic")
+pacf(data["/2019-12-01"]$Retail_sales_cycle,lag.max = 20,na.action = na.contiguous,  main = "Exclusive Pandemic")
+```
+When excluding the pandemic period and thereafter: 
+ACF/PACF suggests including 2 AC and 1 MA term 
+Still some seasonality (non deterministic) - include a SARIMA model in a later stage? 
+
+### Arima
+
+Check with Arima (2,0,1) as suggested by AC and ACF including pandemic dummies - BIC of -1312.4
+
+```{r}
+forecast::Arima(data$Retail_sales_cycle,
+          xreg = pandemicDummies["2000-02-01/2024-03-01"], 
+          order = c(3L, 0L, 0L))
+```
+### Arima different lags
+
+We check for the best AIC and MIC with different lags. Now a bigger model is chosen ARIMA(3,0,3) with the BIC information criterion. 
+BIC -1337.453 but only minor improvement to more simple model. 
+
+```{r}
+
+nArOrder <- 4
+nMaOrder <- 4 
+matrixAIC <- matrix(data = NA,nArOrder+1,nMaOrder+1)
+matrixBIC <- matrix(data = NA,nArOrder+1,nMaOrder+1)
+
+for(iArOrder in 0:nArOrder){ 
+  for(iMaOrder in 0:nMaOrder){
+    temp = forecast::Arima(data$Retail_sales_cycle, 
+                           order = c(iArOrder,0,iMaOrder), 
+                           xreg = pandemicDummies["2000-01-01/2024-03-01"])
+    print(iArOrder)
+    print(iMaOrder)
+    print(temp$bic)
+    print(-2*temp$loglik + (iArOrder+iMaOrder)*log(length(data$Retail_sales_cycle)))
+    matrixAIC[iArOrder+1,iMaOrder+1] = temp$aic
+    matrixBIC[iArOrder+1,iMaOrder+1] = temp$bic
+  }
+}
+
+which(matrixBIC==min(matrixBIC), arr.ind = TRUE)
+which(matrixAIC==min(matrixAIC), arr.ind = TRUE)
+```
+
+
+### Auto Arima 
+
+A lower BIC with the SARIMA model, which is not surprising as the AC and PAC still showed high seasonality with lag 12. 
+A model SARIMA(0,0,1)(2,1,1)[12] is suggested by Auto Arima. We will use the SARIMA model also in the later steps to account for the seasonality as the BIC is lower: -1403.98. 
+
+```{r}
+modelretailsales <- forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = pandemicDummies["2000-02-01/2024-03-01"], 
+                     max.p = 4,
+                     max.q = 4,
+                     trace = TRUE,
+                     stepwise = FALSE)
+```
+
+We generate the forecast for the next 12 months based on the SARIMA(0,0,1)(1,0,1)[12] model.
+
+```{r}
+monthlyDummiesForecast <- forecast::seasonaldummy(ts_ts(data$Retail_sales), 12) 
+
+forecastretail <- forecast::forecast(modelretailsales, 
+                                     xreg = pandemicDummies["2024-04-01/2025-03-01"])
+par(mfrow = c(1, 1))
+plot(forecastretail, main = "Exclusive pandemic: SARIMA(0,0,1)(1,0,1)")
+grid(nx = NULL, ny = NULL, lty = 3, col = "gray", lwd = 0.1)
+```
+
+# Multivariate model 
+
+Explore the CCF Plot for different candidates for the exogenous variable.Cross-correlation only found for Retail EU (seasonally adjusted) - nothing for CHFEUR, Inflation, Brent_COIL or Unemployment.
+We will assess if model can be improved by including Retail EU sales as exogenous variable. 
+
+```{r}
+ccf(as.ts(data$Retail_sales_cycle["/2019-12-31"]),as.ts(data$Retail_EU_cycle["/2019-12-31"]))
+ccf(as.ts(data$Retail_sales_cycle["/2019-12-31"]),as.ts(data$df_CHFEUR["/2019-12-31"]))
+ccf(as.ts(data$Retail_sales_cycle["/2019-12-31"]),as.ts(data$df_Inflation["/2019-12-31"]))
+ccf(as.ts(data$Retail_sales_cycle["/2019-12-31"]),as.ts(data$df_Brent_COIL["/2019-12-31"]))
+ccf(as.ts(data$Retail_sales_cycle["/2019-12-31"]),as.ts(data$df_Unemploy["/2019-12-31"]))
+```
+
+We double check the findings by modeling all the combinations and the related BIC values. Results:
+Univariate 
+-1403.98
+Multivariate
+Retail EU
+-1429.2
+Retail EU with 1 lag 
+-1418.18
+CHF/EUR
+-1401.32
+Retail EU AND CHF/EUR
+-1425.24
+
+Model with Retail EU (Lag 0) with lowest BIC and significant coefficient. 
+Combined Retail EU and CHF/EUR with significant coefficient for CHF/EUR but no improvement in BIC. We decided to not include it in the forecast model because only low significance and we prefer a simple model. 
+
+```{r}
+forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = pandemicDummies["2000-02-01/2024-03-01"],
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$df_Retail_EU),
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$df_Retail_EU,
+                                  lag(data$df_Retail_EU)
+                     ),
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$df_CHFEUR),
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$df_Retail_EU,
+                                  data$df_CHFEUR),
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+```
+
+## Model with Exogenous variable Retail EU 
+
+Model the multivariate model with Auto Arima to account for the seosonality. 
+
+AR/MA terms for the evaluation (see chapter Evaluation):
+
+Retail_EU_cycle: ARIMA(2,0,3)
+ARIMA(0,0,1)(0,1,1)[12]
+CHFEUR: ARIMA(0,0,1)
+Retail_EU_cycle AND CHFEUR: ARIMA(0,0,1)
+ARIMA(1,0,1)(2,1,0)[12]
+
+```{r}
+modelretailsales <- forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$df_Retail_EU
+                                  ),
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+# Check AR/MA terms for later use in the evaluation part Retail EU 
+forecast::auto.arima(ts_ts(data$df_Retail_EU),
+                     ic="bic",
+                     xreg = pandemicDummies["2000-02-01/2024-03-01"], 
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+
+# Check AR/MA terms for later use in the evaluation part CHF/EUR 
+forecast::auto.arima(data$df_CHFEUR,
+                     ic="bic",
+                     xreg = pandemicDummies["2000-02-01/2024-03-01"],
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+# Check AR/MA terms for later use in the evaluation part Retail EU AND CHF/EUR 
+forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                     ic="bic",
+                     xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                  data$df_Retail_EU,
+                                  data$df_CHFEUR),
+                     trace = TRUE,
+                     stepwise = FALSE)
+
+```
+
+Model and plot forecast for Retail EU 
+
+```{r}
+modelretaileu <- forecast::auto.arima(ts_ts(data$df_Retail_EU), 
+                                         xreg = pandemicDummies["2000-02-01/2024-03-01"], 
+                                         ic = "bic",
+                                         trace = TRUE,
+                                         stepwise = FALSE
+                                         )
+
+modelretaileu$bic  
+
+forecasteu <- forecast::forecast(modelretaileu, 
+                                 xreg = pandemicDummies["2024-04-01/2025-03-01"])
+
+plot(forecasteu)
+```
+
+Forecast Swiss Retail with exogneous variable Euro Retail 
+
+```{r}
+forecastretail <- forecast::forecast(modelretailsales, 
+                                     xreg = cbind(pandemicDummies["2024-04-01/2025-03-01"],
+                                     forecasteu$mean))
+
+plot(forecastretail)
+
+```
+
+Reverse the differencing and log to get a point forecast of the index level. 
+Add on to the last observed value and convert back to the original scale. 
+
+```{r}
+cumulative_forecasted_diffs <- cumsum(forecastretail$mean[1:12])
+
+forecasted_series_final <- cumulative_forecasted_diffs + log(tail(data$Retail_sales, 1)[[1]])
+
+forecasted_series_original_scale <- exp(forecasted_series_final)
+
+print(forecasted_series_original_scale)
+```
+
+# Evaluation 
+
+Now for evaluation and for simplicity only use the data before the pandemic and non seasonal model. 
+6 models are evaluated and the AR/MA terms that have been determined in the previous analysis. 
+1) Univariate m/m
+2) Univariate y/y
+3) Multivariate with Retail EU 
+4) Multivariate with Retail EU AND CHF/EUR
+5) Naive "no change"
+6) Average of the above 5 models 
+
+```{r}
+dataeval <- data[as.Date(index(data)) <= as.Date("2020-01-01"), ]
+
+tEvaluationPeriods <- 70
+tPeriods = length(dataeval[,"Retail_sales"])
+forecastHorizon = 12
+nModels = 6 # we compare these models: univariate m/m, y/y, multivariate with EU Retail, CHFEUR, naive, average
+forecastRolling <- matrix(,tEvaluationPeriods,nModels)
+for (tauEvaluationPeriod in 1:tEvaluationPeriods){
+  
+  lastPeriod <- tPeriods-tEvaluationPeriods+tauEvaluationPeriod-forecastHorizon 
+  
+  # Univariate model, m/m 
+  modelRetail_temp <- forecast::Arima(ts_ts(dataeval$df_Retail_sales[1:lastPeriod]),
+                                        order = c(0, 0, 1), seasonal=c(2, 1, 1))
+  forecastRetail_temp <- forecast::forecast(modelRetail_temp, h = forecastHorizon)
+  forecastRolling[tauEvaluationPeriod,1] <- sum(forecastRetail_temp$mean[1:forecastHorizon]) # y/y forecast is sum of m/m (with logs)
+
+  # Univariate model, y/y
+  modelRetail_temp = forecast::Arima(dataeval$df12_Retail_sales[12:lastPeriod],
+                                        order = c(1, 0, 1))
+  forecastRetail_temp = forecast::forecast(modelRetail_temp, h = forecastHorizon)
+  forecastRolling[tauEvaluationPeriod,2] <- forecastRetail_temp$mean[forecastHorizon]
+
+  # Multivariate model
+  modelRetailExo_temp = forecast::Arima(ts_ts(dataeval$df_Retail_sales[1:lastPeriod]),
+                                        order = c(0, 0, 1), seasonal=c(2, 1, 0),
+                                        xreg = dataeval$df_Retail_EU[1:lastPeriod])
+  modelRetaileu_temp <- forecast::Arima(ts_ts(dataeval$df_Retail_EU[1:lastPeriod]), 
+                                        order = c(0, 0, 1), seasonal=c(0, 1, 1))
+  forecasteu_temp <- forecast::forecast(modelRetaileu_temp, 
+                                        h = forecastHorizon)  
+  forecastRetail_temp <- forecast::forecast(modelRetailExo_temp,
+                                            xreg = forecasteu_temp$mean,
+                                            h = forecastHorizon)  
+  forecastRolling[tauEvaluationPeriod,3] <- sum(forecastRetail_temp$mean[1:forecastHorizon])    
+  
+  # Multivariate with Retail EU and CHFEUR 
+  
+  modelRetailExo_temp = forecast::Arima(ts_ts(dataeval$df_Retail_sales[1:lastPeriod]),
+                                        order = c(1, 0, 1), seasonal=c(2, 1, 0),
+                                        xreg = cbind(dataeval$df_Retail_EU[1:lastPeriod],
+                                                     dataeval$df_CHFEUR[1:lastPeriod]))
+  modelRetaileu_temp <- forecast::Arima(ts_ts(dataeval$df_Retail_sales[1:lastPeriod]), 
+                                        order = c(0, 0, 1), seasonal=c(0, 1, 1))
+  modelCHFEUR_temp <- forecast::Arima(ts_ts(dataeval$df_CHFEUR[1:lastPeriod]), 
+                                      order = c(0, 0, 1))
+  forecasteu_temp <- forecast::forecast(modelRetaileu_temp, 
+                                        h = forecastHorizon)  
+  forecastCHFEUR_temp <- forecast::forecast(modelCHFEUR_temp, h = forecastHorizon)
+  forecastRetail_temp <- forecast::forecast(modelRetailExo_temp,
+                                            xreg = cbind(forecasteu_temp$mean, 
+                                                         forecastCHFEUR_temp$mean),
+                                            h = forecastHorizon)  
+  forecastRolling[tauEvaluationPeriod,4] <- sum(forecastRetail_temp$mean[1:forecastHorizon]) 
+  
+  # "Naive", no change forecast
+  
+  forecastRolling[tauEvaluationPeriod,5] <- dataeval$df12_Retail_sales[lastPeriod]
+  
+  # average - just take the average of different models 
+  forecastRolling[tauEvaluationPeriod,6] <- mean(forecastRolling[tauEvaluationPeriod,1:5])
+
+}
+
+matplot(1:70, cbind(forecastRolling,dataeval$df12_Retail_sales[171:240])) 
+```
+
+Now we evaluate the different models according to their performance using the quadratic loss and the absolute loss. 
+Best model is the average of the models, followed by the univarite model. - worst is the naive model. 
+
+```{r}
+## Calculate the forecast errors 
+
+actualData <- dataeval$df12_Retail_sales[(length(dataeval$df12_Retail_sales)-tEvaluationPeriods+1):length(dataeval$df12_Retail_sales)]
+actualDataMatrix <- kronecker(matrix(1,1,6),actualData)
+forecastErrors <- actualDataMatrix - forecastRolling
+
+## Calculate the loss function (quadratic error and absolute error)
+
+quadraticLoss <- forecastErrors^2 
+absoluteLoss <- abs(forecastErrors)
+
+## Calculate the mean loss for each model 
+
+colMeans(quadraticLoss[1:70,])*100
+colMeans(absoluteLoss[1:70,])*100
+
+```
+
+Check for significance difference between the multivariate with Retail EU and the univariate. The difference is significant with the corrected t-value.
+It is significant. We might favor the univariate model. 
+
+```{r}
+regressionDMW <- lm((quadraticLoss[1:70,1]-quadraticLoss[1:70,3]) ~ 1)
+summary(regressionDMW)
+
+## t-value corrected for autocorrelation 
+
+tHAC <- regressionDMW$coefficients/(NeweyWest(regressionDMW,lag = 12))^0.5
+print(tHAC)
+```
+
+# Density forecast multivariate 
+
+Model again with the whole timeframe but excluding the pandemic period. 
+
+```{r}
+modelretailsales <- forecast::auto.arima(ts_ts(data$df_Retail_sales),
+                                         ic="bic",
+                                         xreg = cbind(pandemicDummies["2000-02-01/2024-03-01"], 
+                                                      data$df_Retail_EU
+                                         ),
+                                         max.d = 0, 
+                                         trace = TRUE,
+                                         stepwise = FALSE)
+
+modelretaileu <- forecast::auto.arima(ts_ts(data$df_Retail_EU), 
+                                      xreg = pandemicDummies["2000-02-01/2024-03-01"], 
+                                      ic = "bic",
+                                      trace = TRUE,
+                                      stepwise = FALSE
+                                      )
+```
+
+
+Density forecast with random draw from normal distribution of error term 
+
+```{r}
+tHorizons <- 12
+nDraws <- 100
+forecastRetailMatrix <- rbind(kronecker(matrix(1,1,nDraws),data.matrix(data$Retail_sales_cycle)),matrix(NA,tHorizons,nDraws))
+forecastEUMatrix <- rbind(kronecker(matrix(1,1,nDraws),data.matrix(data$Retail_EU_cycle)),matrix(NA,tHorizons,nDraws))
+
+pandemicDummiesMatrix <- kronecker(matrix(1,1),pandemicDummies)
+
+T <- length(data$Retail_sales_cycle)
+for (tauHorizon in 1:tHorizons) {
+  
+  for (iDraw in 1:nDraws) {
+
+    modelEU_temp <- Arima(forecastEUMatrix[1:T+tauHorizon-1,iDraw],model = modelretaileu, xreg = pandemicDummiesMatrix[1:T+tauHorizon-1,]) 
+    
+    meanForecastEU <- forecast::forecast(modelEU_temp,h=1,xreg = matrix(pandemicDummiesMatrix[(T+tauHorizon),],1,24))$mean 
+    
+    forecastEUMatrix[T+tauHorizon,iDraw] <- meanForecastEU + rnorm(1, mean=0, sd=modelretaileu$sigma2^0.5)
+    
+    
+    modelRetail_temp <- forecast::Arima(forecastRetailMatrix[1:T+tauHorizon-1,iDraw],model = modelretailsales, xreg = cbind(forecastEUMatrix[1:T+tauHorizon-1,iDraw],pandemicDummiesMatrix[1:T+tauHorizon-1,]))
+    
+    meanForecastRetail <- forecast::forecast(modelRetail_temp,h=1,xreg = cbind(forecastEUMatrix[T+tauHorizon,iDraw],matrix(pandemicDummiesMatrix[(T+tauHorizon),],1,24)))$mean
+    forecastRetailMatrix[T+tauHorizon,iDraw] <- meanForecastRetail + rnorm(1, mean=0, sd=modelretailsales$sigma2^0.5)
+    
+  }
+} 
+
+plot(as.ts(data.matrix(data$Retail_sales_cycle)), type = "l", lwd = 2, las = 1, ylab = "",xlim = c(1,T+tHorizons))
+fan(data = t(forecastRetailMatrix[(T+1):(T+tHorizons),]), type = "interval", start = (T+1))
+```
+
+Density forecast with ootstrapping 
+
+```{r}
+forecastRetailMatrixboot <- rbind(kronecker(matrix(1,1,nDraws),data.matrix(data$Retail_sales_cycle)),matrix(NA,tHorizons,nDraws))
+forecastEUMatrixboot <- rbind(kronecker(matrix(1,1,nDraws),data.matrix(data$Retail_EU_cycle)),matrix(NA,tHorizons,nDraws))
+
+modelretaileu$residuals <- modelretaileu$residuals - mean(modelretaileu$residuals)
+modelretailsales$residuals <- modelretailsales$residuals - mean(modelretailsales$residuals)
+
+T <- length(data$Retail_sales_cycle)
+for (tauHorizon in 1:tHorizons) {
+  
+  for (iDraw in 1:nDraws) {
+    
+    modelEU_temp <- Arima(forecastEUMatrix[1:T+tauHorizon-1,iDraw],model = modelretaileu, xreg = pandemicDummiesMatrix[1:T+tauHorizon-1,]) 
+    
+    meanForecastEU <- forecast::forecast(modelEU_temp,h=1,xreg = matrix(pandemicDummiesMatrix[(T+tauHorizon),],1,24))$mean
+    
+    forecastEUMatrixboot[T+tauHorizon,iDraw] <- meanForecastEU + modelretaileu$residuals[ceiling(runif(1,0,length(modelretaileu$residuals)))]
+    
+    
+    modelRetail_temp <- forecast::Arima(forecastRetailMatrixboot[1:T+tauHorizon-1,iDraw],model = modelretailsales,xreg =     cbind(forecastEUMatrixboot[1:T+tauHorizon-1,iDraw],pandemicDummiesMatrix[1:T+tauHorizon-1,]))
+    
+    meanForecastRetail <- forecast::forecast(modelRetail_temp,h=1,xreg = cbind(forecastEUMatrixboot[T+tauHorizon,iDraw],matrix(pandemicDummiesMatrix[(T+tauHorizon),],1,24)))$mean
+    forecastRetailMatrixboot[T+tauHorizon,iDraw] <- meanForecastRetail + modelretailsales$residuals[ceiling(runif(1,0,length(modelretailsales$residuals)))]
+  }
+  
+} 
+
+plot(as.ts(data.matrix(data$Retail_sales_cycle)), type = "l", lwd = 2, las = 1, ylab = "",xlim = c(1,T+tHorizons))
+fan(data = t(forecastRetailMatrixboot[(T+1):(T+tHorizons),]), type = "interval", start = T+1)
+```
+
+
+
+
+
+
+
