@@ -510,12 +510,12 @@ Density forecast with random draw from normal distribution of error term
 ```{r}
 tHorizons <- 12
 nDraws <- 100
-forecastRetailMatrix <- rbind(kronecker(matrix(1,1,nDraws),data.matrix(data$Retail_sales_cycle)),matrix(NA,tHorizons,nDraws))
-forecastEUMatrix <- rbind(kronecker(matrix(1,1,nDraws),data.matrix(data$Retail_EU_cycle)),matrix(NA,tHorizons,nDraws))
+forecastRetailMatrix <- rbind(kronecker(matrix(1,1,nDraws),data.matrix(data$df_Retail_sales)),matrix(NA,tHorizons,nDraws))
+forecastEUMatrix <- rbind(kronecker(matrix(1,1,nDraws),data.matrix(data$df_Retail_EU)),matrix(NA,tHorizons,nDraws))
 
 pandemicDummiesMatrix <- kronecker(matrix(1,1),pandemicDummies)
 
-T <- length(data$Retail_sales_cycle)
+T <- length(data$df_Retail_sales)
 for (tauHorizon in 1:tHorizons) {
   
   for (iDraw in 1:nDraws) {
@@ -535,7 +535,7 @@ for (tauHorizon in 1:tHorizons) {
   }
 } 
 
-plot(as.ts(data.matrix(data$Retail_sales_cycle)), type = "l", lwd = 2, las = 1, ylab = "",xlim = c(1,T+tHorizons))
+plot(as.ts(data.matrix(data$df_Retail_sales)), type = "l", lwd = 2, las = 1, ylab = "",xlim = c(1,T+tHorizons))
 fan(data = t(forecastRetailMatrix[(T+1):(T+tHorizons),]), type = "interval", start = (T+1))
 ```
 
@@ -543,7 +543,7 @@ Density forecast with ootstrapping
 
 ```{r}
 forecastRetailMatrixboot <- rbind(kronecker(matrix(1,1,nDraws),data.matrix(data$Retail_sales_cycle)),matrix(NA,tHorizons,nDraws))
-forecastEUMatrixboot <- rbind(kronecker(matrix(1,1,nDraws),data.matrix(data$Retail_EU_cycle)),matrix(NA,tHorizons,nDraws))
+forecastEUMatrixboot <- rbind(kronecker(matrix(1,1,nDraws),data.matrix(data$df_Retail_EU)),matrix(NA,tHorizons,nDraws))
 
 modelretaileu$residuals <- modelretaileu$residuals - mean(modelretaileu$residuals)
 modelretailsales$residuals <- modelretailsales$residuals - mean(modelretailsales$residuals)
@@ -568,7 +568,7 @@ for (tauHorizon in 1:tHorizons) {
   
 } 
 
-plot(as.ts(data.matrix(data$Retail_sales_cycle)), type = "l", lwd = 2, las = 1, ylab = "",xlim = c(1,T+tHorizons))
+plot(as.ts(data.matrix(data$df_Retail_sales)), type = "l", lwd = 2, las = 1, ylab = "",xlim = c(1,T+tHorizons))
 fan(data = t(forecastRetailMatrixboot[(T+1):(T+tHorizons),]), type = "interval", start = T+1)
 ```
 
